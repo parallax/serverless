@@ -21,9 +21,10 @@ let serverless;
  */
 
 let validateEvent = function(evt) {
-  assert.equal(true, typeof evt.module != 'undefined');
-  assert.equal(true, typeof evt.function != 'undefined');
-  assert.equal(true, typeof evt.runtime != 'undefined');
+  assert.equal(true, typeof evt.options.component != 'undefined');
+  assert.equal(true, typeof evt.options.module != 'undefined');
+  assert.equal(true, typeof evt.options.function != 'undefined');
+  assert.equal(true, typeof evt.options.runtime != 'undefined');
 };
 
 describe('Test action: Module Create', function() {
@@ -32,11 +33,17 @@ describe('Test action: Module Create', function() {
     this.timeout(0);
     testUtils.createTestProject(config)
         .then(projPath => {
+
           process.chdir(projPath);
+
           serverless = new Serverless({
             interactive: false,
+            projectPath: projPath
           });
-          done();
+
+          return serverless.state.load().then(function() {
+            done();
+          });
         });
   });
 
@@ -50,17 +57,21 @@ describe('Test action: Module Create', function() {
 
       this.timeout(0);
 
-      let event = {
-        module:   'temp',
-        function: 'one',
+      let evt = {
+        options: {
+          component:   'nodejscomponent',
+          module:   'newmodule',
+          function: 'newfunction'
+        }
       };
 
-      serverless.actions.moduleCreate(event)
+      serverless.actions.moduleCreate(evt)
           .then(function(evt) {
+            let functionJson = utils.readAndParseJsonSync(path.join(serverless.config.projectPath, 'nodejscomponent', 'newmodule', 'newfunction', 's-function.json'));
+            assert.equal(true, typeof functionJson.name != 'undefined');
+            assert.equal(true, functionJson.endpoints.length);
+
             validateEvent(evt);
-            let functionJson = utils.readAndParseJsonSync(path.join(serverless._projectRootPath, 'back', 'modules', 'temp', 'one', 's-function.json'));
-            assert.equal(true, typeof functionJson.functions.TempOne != 'undefined');
-            assert.equal(true, functionJson.functions.TempOne.endpoints.length);
             done();
           })
           .catch(e => {

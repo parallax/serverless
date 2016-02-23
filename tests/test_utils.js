@@ -11,9 +11,9 @@ let fs        = require('fs'),
     SUtils    = require('../lib/utils');
 
 /**
- * Create test project
+ * Create test private
  * @param config see tests/config.js
- * @param npmInstallDirs list of dirs relative to project root to execute npm install on
+ * @param npmInstallDirs list of dirs relative to private root to execute npm install on
  * @returns {Promise} full path to proj temp dir that was just created
  */
 
@@ -23,7 +23,6 @@ module.exports.createTestProject = function(config, npmInstallDirs) {
       projectRegion        = config.region,
       projectLambdaIAMRole = config.iamRoleArnLambda,
       projectDomain        = projectName + '.com';
-
   // Create Test Project
   let tmpProjectPath = path.join(os.tmpdir(), projectName);
 
@@ -34,45 +33,44 @@ module.exports.createTestProject = function(config, npmInstallDirs) {
     rimraf.sync(tmpProjectPath);
   }
 
-  // Copy test project to temp directory
+  // Copy test private to temp directory
   fs.mkdirSync(tmpProjectPath);
   wrench.copyDirSyncRecursive(path.join(__dirname, './test-prj'), tmpProjectPath, {
-    forceDelete: true,
+    forceDelete: true
   });
 
-  let lambdasCF   = SUtils.readAndParseJsonSync(__dirname + '/../lib/templates/lambdas-cf.json'),
-      resourcesCF = SUtils.readAndParseJsonSync(__dirname + '/../lib/templates/resources-cf.json'),
-      projectJSON = SUtils.readAndParseJsonSync(path.join(tmpProjectPath, 's-project.json'));
+  let projectJSON = SUtils.readAndParseJsonSync(path.join(tmpProjectPath, 's-project.json'));
+  projectJSON.name = projectName;
 
-  // Delete Lambda Template
-  delete lambdasCF.Resources.lTemplate;
+  let commonVariablesPrivate = {
+    project: projectName,
+    domain: projectDomain,
+    projectBucket: SUtils.generateProjectBucketName(projectDomain, projectRegion),
+    endpointVariable: "none"
+  };
 
-  // Add project name to AllowedValues
-  resourcesCF.Parameters.ProjectName.AllowedValues.push(projectName);
+  let stageVariables = {
+    stage: projectStage
+  };
 
-  // Add stages to AllowedValues
-  resourcesCF.Parameters.Stage.AllowedValues.push(config.stage);
-  resourcesCF.Parameters.Stage.AllowedValues.push(config.stage2);
-
-  // Add stages to AllowedValues
-  resourcesCF.Parameters.DataModelStage.AllowedValues.push(config.stage);
-  resourcesCF.Parameters.DataModelStage.AllowedValues.push(config.stage2);
+  let regionVariables = {
+    region: projectRegion,
+    resourcesStackName: `${projectName}-${projectStage}-r`,
+    iamRoleArnLambda: projectLambdaIAMRole,
+    testEventBucket: config.testEventBucket,
+    streamArn: config.streamArn,
+    'eventID:nodejscomponent/group1/function1#dynamodb': config.streamUUID,
+    topicArn: config.topicArn
+  };
 
   return Promise.all([
-      SUtils.writeFile(path.join(tmpProjectPath, 'cloudformation', 'lambdas-cf.json'), JSON.stringify(lambdasCF, null, 2)),
-      SUtils.writeFile(path.join(tmpProjectPath, 'cloudformation', 'resources-cf.json'), JSON.stringify(resourcesCF, null, 2)),
+      SUtils.writeFile(path.join(tmpProjectPath, '_meta', 'resources', `s-resources-cf-${projectStage}-${projectRegion}.json`), JSON.stringify(projectJSON.cloudFormation, null, 2)),
+      SUtils.writeFile(path.join(tmpProjectPath, '_meta', 'variables', 's-variables-common.json'), JSON.stringify(commonVariablesPrivate, null, 2)),
+      SUtils.writeFile(path.join(tmpProjectPath, '_meta', 'variables', `s-variables-${projectStage}.json`), JSON.stringify(stageVariables, null, 2)),
+      SUtils.writeFile(path.join(tmpProjectPath, '_meta', 'variables', `s-variables-${projectStage}-${projectRegion.replace(/-/g, '')}.json`), JSON.stringify(regionVariables, null, 2)),
+      SUtils.writeFile(path.join(tmpProjectPath, `s-project.json`), JSON.stringify(projectJSON, null, 2))
     ])
     .then(function() {
-      projectJSON.name   = projectName;
-      projectJSON.domain = projectDomain;
-      projectJSON.stages = {};
-      projectJSON.stages[projectStage] = [{
-        region:               projectRegion,
-        iamRoleArnLambda:     projectLambdaIAMRole,
-        regionBucket:         SUtils.generateRegionBucketName(projectRegion, projectDomain)
-      },];
-
-      fs.writeFileSync(path.join(tmpProjectPath, 's-project.json'), JSON.stringify(projectJSON, null, 2));
 
       // Write Admin.env file
       let adminEnv = 'SERVERLESS_ADMIN_AWS_ACCESS_KEY_ID='
@@ -84,9 +82,8 @@ module.exports.createTestProject = function(config, npmInstallDirs) {
       //Need to run npm install on the test project, they recommend NOT doing this programatically
       //https://github.com/npm/npm#using-npm-programmatically
       if (npmInstallDirs) {
-
         npmInstallDirs.forEach(function(dir) {
-          let fullPath = path.join(tmpProjectPath, 'back', 'modules', dir);
+          let fullPath = path.join(tmpProjectPath, dir);
           SUtils.sDebug('test_utils', `Running NPM install on ${fullPath}`);
           SUtils.npmInstall(fullPath);
         });

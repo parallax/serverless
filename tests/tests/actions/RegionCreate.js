@@ -22,15 +22,9 @@ let serverless;
  */
 
 let validateEvent = function(evt) {
-  assert.equal(true, typeof evt.region != 'undefined');
-  assert.equal(true, typeof evt.noExeCf != 'undefined');
-  assert.equal(true, typeof evt.stage != 'undefined');
-  assert.equal(true, typeof evt.regionBucket != 'undefined');
-
-  if (!config.noExecuteCf) {
-    assert.equal(true, typeof evt.iamRoleLambdaArn != 'undefined');
-    assert.equal(true, typeof evt.stageCfStack != 'undefined');
-  }
+  assert.equal(true, typeof evt.options.region !== 'undefined');
+  assert.equal(true, typeof evt.options.stage !== 'undefined');
+  assert.equal(true, typeof evt.data !== 'undefined');
 };
 
 /**
@@ -38,54 +32,28 @@ let validateEvent = function(evt) {
  * - Remove Stage CloudFormation Stack
  */
 
-let cleanup = function(evt, cb) {
+let cleanup = function(Meta, cb) {
 
   AWS.config.update({
-    region:          config.region2,
+    region:          Meta.variables.projectBucket.split('.')[1],
     accessKeyId:     config.awsAdminKeyId,
     secretAccessKey: config.awsAdminSecretKey,
   });
 
-  // Delete Region Bucket
   let s3 = new AWS.S3();
 
-  // Delete All Objects in Bucket first, this is required
-  s3.listObjects({
-    Bucket: evt.regionBucket
-  }, function(err, data) {
-    if (err) console.log(err);
+  let params = {
+    Bucket: Meta.variables.projectBucket,
+    Delete: {
+      Objects: [{
+      Key: `${Meta.variables.projectBucket}/serverless/${Meta.variables.project}/${config.stage}/${config.region2}/`
+      }]
+    }
+  };
 
-    let params = {
-      Bucket: evt.regionBucket
-    };
-    params.Delete = {};
-    params.Delete.Objects = [];
-
-    data.Contents.forEach(function(content) {
-      params.Delete.Objects.push({Key: content.Key});
-    });
-    s3.deleteObjects(params, function(err, data) {
-      if (err) return console.log(err);
-
-      // Delete Bucket
-      s3.deleteBucket({
-        Bucket: evt.regionBucket
-      }, function (err, data) {
-        if (err) console.log(err, err.stack); // an error occurred
-
-        if (config.noExecuteCf) return cb();
-
-        // Delete CloudFormation Resources Stack
-        let cloudformation = new AWS.CloudFormation();
-        cloudformation.deleteStack({
-          StackName: evt.stageCfStack
-        }, function (err, data) {
-          if (err) console.log(err, err.stack); // an error occurred
-
-          return cb();
-        });
-      });
-    });
+  s3.deleteObjects(params, function(err, data) {
+    if (err) return console.log(err);
+    return cb();
   });
 };
 
@@ -101,16 +69,18 @@ describe('Test Action: Region Create', function() {
     testUtils.createTestProject(config)
         .then(projPath => {
           this.timeout(0);
-
           process.chdir(projPath);  // Ror some weird reason process.chdir adds /private/ before cwd path
 
           serverless = new Serverless({
             interactive: false,
             awsAdminKeyId:     config.awsAdminKeyId,
-            awsAdminSecretKey: config.awsAdminSecretKey
+            awsAdminSecretKey: config.awsAdminSecretKey,
+            projectPath: projPath
           });
 
-          done();
+          return serverless.state.load().then(function() {
+            done();
+          });
         });
   });
 
@@ -123,20 +93,26 @@ describe('Test Action: Region Create', function() {
 
       this.timeout(0);
 
-      let event = {
-        stage:      config.stage,
-        region:     config.region2,
-        noExeCf:    config.noExecuteCf,
+      let evt = {
+        options: {
+          stage:      config.stage,
+          region:     config.region2,
+          noExeCf:    config.noExecuteCf
+        }
       };
 
-      serverless.actions.regionCreate(event)
+      serverless.actions.regionCreate(evt)
           .then(function(evt) {
+
+            let Meta = serverless.state.meta;
+            //console.log(serverless.state.meta.stages)
+            assert.equal(true, typeof Meta.stages[config.stage].regions[config.region2].variables.region != 'undefined');
 
             // Validate Event
             validateEvent(evt);
 
             // Cleanup
-            cleanup(evt, done);
+            cleanup(Meta, done);
           })
           .catch(e => {
             done(e);

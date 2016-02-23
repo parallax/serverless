@@ -19,74 +19,79 @@ let serverless;
  */
 
 let validateEvent = function(evt) {
-  assert.equal(true, typeof evt.function != 'undefined');
-  assert.equal(true, typeof evt.function.event != 'undefined');
-  assert.equal(true, typeof evt.result != 'undefined');
-  assert.equal(true, typeof evt.function.handler != 'undefined');
+    assert.equal(true, typeof evt.options.path != 'undefined');
+    assert.equal(true, typeof evt.data.result.response != 'undefined');
+    assert.equal(true, evt.data.result.status === 'success');
 };
+
 
 describe('Test Action: Function Run', function() {
 
-  before(function(done) {
-    this.timeout(0);
+    before(function(done) {
+        this.timeout(0);
+        testUtils.createTestProject(config, ['nodejscomponent'])
+            .then(projPath => {
 
-    testUtils.createTestProject(config, ['moduleone/simple'])
-        .then(projPath => {
+                this.timeout(0);
 
-          this.timeout(0);
+                process.chdir(projPath);
 
-          process.chdir(projPath);
+                serverless = new Serverless({
+                    interactive: true,
+                    awsAdminKeyId:     config.awsAdminKeyId,
+                    awsAdminSecretKey: config.awsAdminSecretKey,
+                    projectPath: projPath
+                });
 
-          serverless = new Serverless({
-            interactive: true,
-            awsAdminKeyId:     config.awsAdminKeyId,
-            awsAdminSecretKey: config.awsAdminSecretKey
-          });
+                return serverless.state.load()
+                    .then(function() {
 
-          done();
+                        done();
+                    });
+            });
+    });
+
+    after(function(done) {
+        done();
+    });
+
+    describe('Function Run Local', function() {
+        it('should run the local function with no errors', function(done) {
+
+            this.timeout(0);
+            let options = {
+                path: 'nodejscomponent/group1/function1'
+            };
+
+            serverless.actions.functionRun(options)
+                .then(function(evt) {
+                    validateEvent(evt);
+                    done();
+                })
+                .catch(e => {
+                    done(e);
+                });
         });
-  });
-
-  after(function(done) {
-    done();
-  });
-
-  describe('Function Run w/ Path', function() {
-    it('should run the function with no errors', function(done) {
-
-      this.timeout(0);
-
-      serverless.actions.functionRun({
-        path: 'moduleone/simple#simpleOne'
-      })
-          .then(function(evt) {
-            validateEvent(evt);
-            assert.equal(true, evt.result.status == 'success');
-            done();
-          })
-          .catch(e => {
-            done(e);
-          });
     });
-  });
 
-  describe('Function Run w/ Name', function() {
-    it('should run the function with no errors', function(done) {
+    describe('Function Run Deployed', function() {
+        it('should run the deployed function with no errors', function(done) {
 
-      this.timeout(0);
+            this.timeout(0);
+            let options = {
+                path: 'nodejscomponent/group1/function1',
+                stage: 'development'
+            };
 
-      serverless.actions.functionRun({
-            name: 'simpleOne'
-          })
-          .then(function(evt) {
-            validateEvent(evt);
-            assert.equal(true, evt.result.status == 'success');
-            done();
-          })
-          .catch(e => {
-            done(e);
-          });
+            serverless.actions.functionRun(options)
+                .then(function(evt) {
+                    validateEvent(evt);
+                    done();
+                })
+                .catch(e => {
+                    done(e);
+                });
+        });
     });
-  });
 
 });

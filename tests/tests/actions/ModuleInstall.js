@@ -2,7 +2,7 @@
 
 /**
  * Test: Module Install Action
- * - Creates a new project in your system's temp directory
+ * - Creates a new private in your system's temp directory
  * - Installs module-test Module from github using the ModuleInstall action
  * - asserts that the Module was installed correctly
  */
@@ -16,17 +16,33 @@ let Serverless      = require('../../../lib/Serverless.js'),
 
 let serverless;
 
+/**
+ * Validate Event
+ * - Validate an event object's properties
+ */
+
+let validateEvent = function(evt) {
+  assert.equal(true, typeof evt.data.module !== 'undefined');
+  assert.equal(true, typeof evt.options.url !== 'undefined');
+};
+
 describe('Test action: Module Install', function() {
 
   before(function(done) {
     this.timeout(0);
     testUtils.createTestProject(config)
         .then(projPath => {
+
           process.chdir(projPath);
+
           serverless = new Serverless({
             interactive: false,
+            projectPath: projPath
           });
-          done();
+
+          return serverless.state.load().then(function() {
+            done();
+          });
         });
   });
 
@@ -37,19 +53,24 @@ describe('Test action: Module Install', function() {
   describe('Module Install positive tests', function() {
 
     it('installs module-test Module from github', function(done) {
+
       this.timeout(0);
-      let event = {
-        url:   'https://github.com/serverless/serverless-module-test'
+      let evt = {
+        options: {
+          url: 'https://github.com/serverless/serverless-module-test'
+        }
       };
 
-      serverless.actions.moduleInstall(event)
+      serverless.actions.moduleInstall(evt)
           .then(function(evt) {
 
-            assert.equal('https://github.com/serverless/serverless-module-test', evt.url);
+            let Function = new serverless.classes.Function(serverless, {module: 'module-test', function: 'function-test'});
+            assert.equal(Function.data.name, 'function-test');
+            assert.equal('https://github.com/serverless/serverless-module-test', evt.options.url);
 
-            let functionJson = utils.readAndParseJsonSync(path.join(serverless._projectRootPath, 'back', 'modules', 'module-test', 'func', 's-function.json'));
-            assert.equal(true, typeof functionJson.functions['Module-testFunc'] != 'undefined');
-            assert.equal(true, typeof functionJson.functions['Module-testFunc'].endpoints['module-test/func'] != 'undefined');
+            // Validate Event
+            validateEvent(evt);
+
             done();
           })
           .catch(e => {

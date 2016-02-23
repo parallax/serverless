@@ -5,11 +5,12 @@
  */
 
 let Serverless  = require('../../../lib/Serverless.js'),
-    path        = require('path'),
-    utils       = require('../../../lib/utils/index'),
-    assert      = require('chai').assert,
-    testUtils   = require('../../test_utils'),
-    config      = require('../../config');
+  path        = require('path'),
+  utils       = require('../../../lib/utils/index'),
+  assert      = require('chai').assert,
+  testUtils   = require('../../test_utils'),
+  AWS         = require('aws-sdk'),
+  config      = require('../../config');
 
 let serverless;
 
@@ -19,21 +20,46 @@ let serverless;
  */
 
 let validateEvent = function(evt) {
-  assert.equal(true, typeof evt.stage != 'undefined');
-  assert.equal(true, typeof evt.regions != 'undefined');
-  assert.equal(true, typeof evt.all != 'undefined');
-  assert.equal(true, typeof evt.aliasFunction != 'undefined');
-  assert.equal(true, typeof evt.functions != 'undefined');
-  assert.equal(true, typeof evt.deployed != 'undefined');
+  assert.equal(true, typeof evt.options.stage != 'undefined');
+  assert.equal(true, typeof evt.options.region != 'undefined');
+  assert.equal(true, typeof evt.options.aliasFunction != 'undefined');
+  assert.equal(true, typeof evt.options.paths != 'undefined');
 
-  if (evt.failed) {
-    for (let i = 0; i < Object.keys(evt.failed).length; i++) {
-      console.log(Object.keys(evt.failed)[i]);
-      console.log(evt.failed[Object.keys(evt.failed)[i]]);
+  if (evt.data.failed) {
+    for (let i = 0; i < Object.keys(evt.data.failed).length; i++) {
+      console.log(Object.keys(evt.data.failed)[i]);
+      console.log(evt.data.failed[Object.keys(evt.data.failed)[i]]);
     }
   }
+  assert.equal(true, typeof evt.data.failed === 'undefined');
+  assert.equal(true, typeof evt.data.deployed != 'undefined');
+};
 
-  assert.equal(true, typeof evt.failed === 'undefined');
+/**
+ * Test Cleanup
+ * - Remove Event Source mapping
+ */
+
+let cleanup = function(UUID, cb) {
+  let awsConfig = {
+    region:          config.region,
+    accessKeyId:     config.awsAdminKeyId,
+    secretAccessKey: config.awsAdminSecretKey
+  };
+
+  let lambda = new AWS.Lambda(awsConfig);
+
+  let params = {
+    UUID: UUID
+  };
+
+  lambda.deleteEventSourceMapping(params, function(e, data) {
+    if (e) {
+      cb(e)
+    } else {
+      cb()
+    }
+  });
 };
 
 /**
@@ -45,19 +71,22 @@ describe('Test Action: Function Deploy', function() {
   before(function(done) {
     this.timeout(0);
 
-    testUtils.createTestProject(config, ['moduleone'])
-        .then(projPath => {
+    testUtils.createTestProject(config, ['nodejscomponent'])
+      .then(projPath => {
 
-          process.chdir(projPath);
+        process.chdir(projPath);
 
-          serverless = new Serverless({
-            interactive: false,
-            awsAdminKeyId:     config.awsAdminKeyId,
-            awsAdminSecretKey: config.awsAdminSecretKey
-          });
+        serverless = new Serverless({
+          interactive:       false,
+          awsAdminKeyId:     config.awsAdminKeyId,
+          awsAdminSecretKey: config.awsAdminSecretKey,
+          projectPath:       projPath
+        });
 
+        return serverless.state.load().then(function() {
           done();
         });
+      });
   });
 
   after(function(done) {
@@ -73,37 +102,39 @@ describe('Test Action: Function Deploy', function() {
 
       this.timeout(0);
 
-      let event = {
+      let options = {
         stage:      config.stage,
         region:     config.region,
         paths:      [
-          'moduleone/simple#simpleOne'
+          'nodejscomponent/group1/function1'
         ]
       };
 
-      serverless.actions.functionDeploy(event)
-          .then(function(evt) {
-            validateEvent(evt);
-            done();
-          })
-          .catch(e => {
-            done(e);
-          });
+      serverless.actions.functionDeploy(options)
+        .then(function(evt) {
+          validateEvent(evt);
+          done();
+        })
+        .catch(e => {
+          done(e);
+        });
     });
   });
 
-  describe('Function Deploy: Specify All Paths', function() {
-    it('should deploy code', function(done) {
+  describe('Function Deploy: Nested W/ Custom Name', function() {
+    it('should deploy functions', function(done) {
 
       this.timeout(0);
 
-      let event = {
+      let options = {
         stage:      config.stage,
         region:     config.region,
-        all:        true
+        paths:      [
+          'nodejscomponent/group1/group2/function4'
+        ]
       };
 
-      serverless.actions.functionDeploy(event)
+      serverless.actions.functionDeploy(options)
           .then(function(evt) {
             validateEvent(evt);
             done();
@@ -113,4 +144,5 @@ describe('Test Action: Function Deploy', function() {
           });
     });
   });
+
 });

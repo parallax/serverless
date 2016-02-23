@@ -21,35 +21,38 @@ let serverless;
  */
 
 let validateEvent = function(evt) {
-  assert.equal(true, typeof evt.region != 'undefined');
-  assert.equal(true, typeof evt.noExeCf != 'undefined');
-  assert.equal(true, typeof evt.stage != 'undefined');
-  assert.equal(true, typeof evt.regionBucket != 'undefined');
-
-  if (!config.noExecuteCf) {
-    assert.equal(true, typeof evt.iamRoleLambdaArn != 'undefined');
-    assert.equal(true, typeof evt.stageCfStack != 'undefined');
-  }
+  assert.equal(true, typeof evt.options.region !== 'undefined');
+  assert.equal(true, typeof evt.options.stage !== 'undefined');
+  assert.equal(true, typeof evt.data !== 'undefined');
 };
+
 
 /**
  * Test Cleanup
  * - Remove Stage CloudFormation Stack
  */
 
-let cleanup = function(evt, cb) {
+let cleanup = function(Meta, cb) {
 
-  if (config.noExecuteCf) return cb();
-
-  let cloudformation = new AWS.CloudFormation({
-    region:          evt.region,
+  AWS.config.update({
+    region:          Meta.variables.projectBucket.split('.')[1],
     accessKeyId:     config.awsAdminKeyId,
-    secretAccessKey: config.awsAdminSecretKey,
+    secretAccessKey: config.awsAdminSecretKey
   });
-  cloudformation.deleteStack({
-    StackName: evt.stageCfStack
-  }, function(err, data) {
-    if (err) console.log(err, err.stack); // an error occurred
+
+  let s3 = new AWS.S3();
+
+  let params = {
+    Bucket: Meta.variables.projectBucket,
+    Delete: {
+      Objects: [{
+        Key: `${Meta.variables.projectBucket}/serverless/${Meta.variables.project}/${config.stage2}/`
+      }]
+    }
+  };
+
+  s3.deleteObjects(params, function(err, data) {
+    if (err) return console.log(err);
     return cb();
   });
 };
@@ -68,10 +71,13 @@ describe('Test Action: Stage Create', function() {
           serverless = new Serverless({
             interactive: false,
             awsAdminKeyId:     config.awsAdminKeyId,
-            awsAdminSecretKey: config.awsAdminSecretKey
+            awsAdminSecretKey: config.awsAdminSecretKey,
+            projectPath: projPath
           });
 
-          done();
+          return serverless.state.load().then(function() {
+            done();
+          });
         });
   });
 
@@ -80,20 +86,26 @@ describe('Test Action: Stage Create', function() {
 
       this.timeout(0);
 
-      let event = {
-        stage:      config.stage2,
-        region:     config.region,
-        noExeCf:    config.noExecuteCf,
+      let evt = {
+        options: {
+          stage:      config.stage2,
+          region:     config.region,
+          noExeCf:    config.noExecuteCf
+        }
       };
 
-      serverless.actions.stageCreate(event)
+      serverless.actions.stageCreate(evt)
           .then(function(evt) {
 
-            // Validate Event
+            let Meta = serverless.state.meta;
+            assert.equal(true, typeof Meta.stages[config.stage2].variables.stage != 'undefined');
+            assert.equal(true, typeof Meta.stages[config.stage2].regions[config.region].variables.region != 'undefined');
+
+            // Validate EVT
             validateEvent(evt);
 
             // Cleanup
-            cleanup(evt, done);
+            cleanup(Meta, done);
           })
           .catch(e => {
             done(e);

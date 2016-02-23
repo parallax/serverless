@@ -20,11 +20,11 @@ let serverless;
 
 let validateEvent = function(evt, isSet) {
 
-  assert.equal(true, typeof evt.region != 'undefined');
-  assert.equal(true, typeof evt.stage != 'undefined');
-  assert.equal('ENV_SET_TEST_KEY', evt.key);
+  assert.equal(true, typeof evt.options.region != 'undefined');
+  assert.equal(true, typeof evt.options.stage != 'undefined');
+  assert.equal('ENV_SET_TEST_KEY', evt.options.key);
 
-  if(isSet) assert.equal('ENV_SET_TEST_VAL', evt.value);
+  if (isSet) assert.equal('ENV_SET_TEST_VAL', evt.options.value);
 
 
 };
@@ -43,10 +43,13 @@ describe('Test Env Set & Env Unset actions', function() {
           serverless = new Serverless({
             interactive: false,
             awsAdminKeyId:     config.awsAdminKeyId,
-            awsAdminSecretKey: config.awsAdminSecretKey
+            awsAdminSecretKey: config.awsAdminSecretKey,
+            projectPath: projPath
           });
 
-          done();
+          return serverless.state.load().then(function() {
+            done();
+          });
         });
   });
 
@@ -59,26 +62,26 @@ describe('Test Env Set & Env Unset actions', function() {
 
       this.timeout(0);
 
-      let setEvent = {
+      let setEvt = {
         stage:      config.stage,
         region:     config.region,
-        key:    'ENV_SET_TEST_KEY',
-        value:       'ENV_SET_TEST_VAL',
+        key:        'ENV_SET_TEST_KEY',
+        value:      'ENV_SET_TEST_VAL'
       };
 
-      serverless.actions.envSet(setEvent)
+      serverless.actions.envSet(setEvt)
           .then(function(setEvt) {
 
             // Validate Set Event
             validateEvent(setEvt, true);
 
-            let unsetEvent = {
-              stage:      setEvt.stage,
-              region:     setEvt.region,
-              key:    setEvt.key,
+            let unsetEvt = {
+              stage:      setEvt.options.stage,
+              region:     setEvt.options.region,
+              key:        setEvt.options.key
             };
 
-            serverless.actions.envUnset(unsetEvent)
+            serverless.actions.envUnset(unsetEvt)
                 .then(function(unsetEvt) {
 
                   // Validate Unset Event
